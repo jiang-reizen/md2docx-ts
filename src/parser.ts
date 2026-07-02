@@ -48,8 +48,8 @@ const unsupportedInline = new Set([
 ]);
 
 export function parseMarkdown(input: string): Document {
-  preflight(input);
   const footnoteDefinitions = scanFootnoteDefinitions(input);
+  preflight(input);
   const tokens = markdown.parse(input, {});
   const document = createEmptyDocument();
   const parser = new BlockParser(tokens, document.referencePool);
@@ -268,7 +268,6 @@ function findMatchingClose(tokens: Token[], start: number, closeType: string): n
 }
 
 function preflight(input: string): void {
-  scanFootnoteDefinitions(input);
   if (/^\s*[-*+]\s+\[[ xX]\]/m.test(input)) {
     throw new Error("md2docx parser: unsupported block token: task_list_checkbox");
   }

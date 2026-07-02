@@ -302,7 +302,7 @@ function defaultNumberingFont(format: NumberingFormat): string {
 }
 
 function defaultNumberingText(format: NumberingFormat, level: number): string {
-  const marker = Number.isNaN(level) ? "%1" : `%${level}`;
+  const marker = `%${level}`;
   if (format === "bullet") return "•";
   if (format === "chineseCounting") return `${marker}、`;
   if (format === "lowerLetter" || format === "lowerRoman") return `${marker})`;

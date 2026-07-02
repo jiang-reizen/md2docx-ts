@@ -5,8 +5,14 @@
   "bin": {
     "md2docx": "./dist/cli.js"
   },
+  "files": [
+    "dist",
+    "sample",
+    "docs"
+  ],
   "scripts": {
-    "build": "tsc",
+    "clean": "rm -rf dist",
+    "build": "npm run clean && tsc -p tsconfig.build.json",
     "dev": "tsx src/cli.ts",
     "md2docx": "tsx src/cli.ts",
     "test": "vitest run",

@@ -1,69 +1,33 @@
 import JSZip from "jszip";
 
-export async function patchFootnotesXml(buffer: Buffer): Promise<Buffer> {
-  const zip = await JSZip.loadAsync(buffer);
-  const file = zip.file("word/footnotes.xml");
-  if (!file) return buffer;
-
-  const xml = await file.async("string");
-  const patched = patchFootnotesXmlText(xml);
-  if (patched === xml) return buffer;
-
-  zip.file("word/footnotes.xml", patched);
-  return zip.generateAsync({ type: "nodebuffer" });
-}
-
 export async function patchDocxXml(buffer: Buffer): Promise<Buffer> {
-  const footnotePatched = await patchFootnotesXml(buffer);
-  return patchNumberingIds(footnotePatched);
-}
-
-export async function patchNumberingIds(buffer: Buffer): Promise<Buffer> {
   const zip = await JSZip.loadAsync(buffer);
-  const numberingFile = zip.file("word/numbering.xml");
-  const documentFile = zip.file("word/document.xml");
-  if (!numberingFile || !documentFile) return buffer;
+  let changed = false;
 
-  const numberingXml = await numberingFile.async("string");
-  const abstractIds = [...numberingXml.matchAll(/<w:abstractNum\b[^>]*w:abstractNumId="(\d+)"/g)]
-    .map((match) => Number(match[1]))
-    .filter((id) => id > 1);
-  if (abstractIds.length === 0) return buffer;
-
-  const abstractMap = new Map<number, number>();
-  abstractIds.forEach((id, index) => abstractMap.set(id, 10 + index));
-
-  const numMap = new Map<number, number>();
-  for (const match of numberingXml.matchAll(/<w:num\b[^>]*w:numId="(\d+)">[\s\S]*?<w:abstractNumId w:val="(\d+)"/g)) {
-    const numId = Number(match[1]);
-    const abstractId = Number(match[2]);
-    if (abstractMap.has(abstractId)) numMap.set(numId, 20 + numMap.size);
+  const footnotesFile = zip.file("word/footnotes.xml");
+  if (footnotesFile) {
+    const xml = await footnotesFile.async("string");
+    const patched = patchFootnotesXmlText(xml);
+    if (patched !== xml) {
+      zip.file("word/footnotes.xml", patched);
+      changed = true;
+    }
   }
 
-  let patchedNumbering = numberingXml
-    .replace(/w:abstractNumId="(\d+)"/g, (whole, id: string) => {
-      const next = abstractMap.get(Number(id));
-      return next === undefined ? whole : `w:abstractNumId="${next}"`;
-    })
-    .replace(/<w:abstractNumId w:val="(\d+)"\/>/g, (whole, id: string) => {
-      const next = abstractMap.get(Number(id));
-      return next === undefined ? whole : `<w:abstractNumId w:val="${next}"/>`;
-    })
-    .replace(/w:numId="(\d+)"/g, (whole, id: string) => {
-      const next = numMap.get(Number(id));
-      return next === undefined ? whole : `w:numId="${next}"`;
-    });
+  const numberingFile = zip.file("word/numbering.xml");
+  const documentFile = zip.file("word/document.xml");
+  if (numberingFile && documentFile) {
+    const numberingXml = await numberingFile.async("string");
+    const documentXml = await documentFile.async("string");
+    const { numbering, document } = patchNumberingXml(numberingXml, documentXml);
+    if (numbering !== numberingXml || document !== documentXml) {
+      zip.file("word/numbering.xml", numbering);
+      zip.file("word/document.xml", document);
+      changed = true;
+    }
+  }
 
-  const documentXml = await documentFile.async("string");
-  const patchedDocument = documentXml.replace(/<w:numId w:val="(\d+)"\/>/g, (whole, id: string) => {
-    const next = numMap.get(Number(id));
-    return next === undefined ? whole : `<w:numId w:val="${next}"/>`;
-  });
-
-  if (patchedNumbering === numberingXml && patchedDocument === documentXml) return buffer;
-  zip.file("word/numbering.xml", patchedNumbering);
-  zip.file("word/document.xml", patchedDocument);
-  return zip.generateAsync({ type: "nodebuffer" });
+  return changed ? zip.generateAsync({ type: "nodebuffer" }) : buffer;
 }
 
 export function patchFootnotesXmlText(xml: string): string {
@@ -83,4 +47,35 @@ export function patchFootnotesXmlText(xml: string): string {
       '<w:r><w:t xml:space="preserve"> </w:t></w:r>';
     return `<w:footnote${attrs}>${body.slice(0, run.index)}${marker}${body.slice(run.index + run[0].length)}</w:footnote>`;
   });
+}
+
+function patchNumberingXml(numberingXml: string, documentXml: string): { numbering: string; document: string } {
+  const abstractIds = [...numberingXml.matchAll(/<w:abstractNum\b[^>]*w:abstractNumId="(\d+)"/g)]
+    .map((match) => Number(match[1]))
+    .filter((id) => id > 1);
+  if (abstractIds.length === 0) return { numbering: numberingXml, document: documentXml };
+
+  const abstractMap = new Map(abstractIds.map((id, index) => [id, 10 + index]));
+  const numMap = new Map<number, number>();
+
+  for (const match of numberingXml.matchAll(/<w:num\b[^>]*w:numId="(\d+)">[\s\S]*?<w:abstractNumId w:val="(\d+)"/g)) {
+    if (abstractMap.has(Number(match[2]))) numMap.set(Number(match[1]), 20 + numMap.size);
+  }
+
+  const mapAbstract = (whole: string, id: string) => {
+    const next = abstractMap.get(Number(id));
+    return next === undefined ? whole : whole.replace(id, String(next));
+  };
+  const mapNum = (whole: string, id: string) => {
+    const next = numMap.get(Number(id));
+    return next === undefined ? whole : whole.replace(id, String(next));
+  };
+
+  return {
+    numbering: numberingXml
+      .replace(/w:abstractNumId="(\d+)"/g, mapAbstract)
+      .replace(/<w:abstractNumId w:val="(\d+)"\/>/g, mapAbstract)
+      .replace(/w:numId="(\d+)"/g, mapNum),
+    document: documentXml.replace(/<w:numId w:val="(\d+)"\/>/g, mapNum),
+  };
 }
