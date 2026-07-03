@@ -107,4 +107,4 @@ test/             单元测试
 
 ## 许可证
 
-TODO: 决定许可证后填写，例如 MIT、Apache-2.0，或说明暂不授权复用。
+本项目基于 [MIT License](LICENSE) 开源。
