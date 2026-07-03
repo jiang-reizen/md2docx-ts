@@ -34,6 +34,16 @@ interface ParagraphRenderOptions {
   numbering?: { reference: string; level: number; instance: number };
 }
 
+/**
+ * *公共接口*
+ *
+ * 将内部文档 IR 和样式对象渲染为 DOCX buffer。函数会先通过 docx 库生成主体内容，
+ * 再 patch 必要的 OOXML 细节。
+ *
+ * @param document 内部文档 IR
+ * @param style DOCX 样式对象
+ * @returns DOCX 文件内容
+ */
 export async function buildDocx(document: Document, style: DocxStyle): Promise<Buffer> {
   const context: RenderContext = {
     style,
@@ -57,11 +67,31 @@ export async function buildDocx(document: Document, style: DocxStyle): Promise<B
   return patchDocxXml(await Packer.toBuffer(doc));
 }
 
+/**
+ * *公共接口*
+ *
+ * 将内部文档 IR 写出为 DOCX 文件。输出目录不存在时会自动创建。
+ *
+ * @param document 内部文档 IR
+ * @param style DOCX 样式对象
+ * @param outputPath 输出 DOCX 路径
+ */
 export async function writeDocx(document: Document, style: DocxStyle, outputPath: string): Promise<void> {
   await mkdir(dirname(outputPath), { recursive: true });
   await writeFile(outputPath, await buildDocx(document, style));
 }
 
+/**
+ * *内部流程*
+ *
+ * 递归渲染块级 IR。列表会进入 renderList，标题和段落会进入 renderTextBlock。
+ *
+ * @param blocks 块级 IR 列表
+ * @param context 渲染上下文
+ * @param level 当前列表层级
+ * @param inListItem 当前是否位于列表项内部
+ * @returns docx 段落列表
+ */
 function renderBlocks(blocks: Block[], context: RenderContext, level: number, inListItem: boolean): Paragraph[] {
   const output: Paragraph[] = [];
   for (const block of blocks) {
@@ -74,6 +104,17 @@ function renderBlocks(blocks: Block[], context: RenderContext, level: number, in
   return output;
 }
 
+/**
+ * *内部流程*
+ *
+ * 渲染一个 Markdown List。每个 Markdown list block 会分配独立 numbering instance，
+ * 避免不同父项下的嵌套有序列表互相续号。
+ *
+ * @param list 列表 IR
+ * @param context 渲染上下文
+ * @param level 当前列表层级
+ * @returns docx 段落列表
+ */
 function renderList(list: List, context: RenderContext, level: number): Paragraph[] {
   const output: Paragraph[] = [];
   const instance = context.nextListNumberingId++;
@@ -97,6 +138,17 @@ function renderList(list: List, context: RenderContext, level: number): Paragrap
   return output;
 }
 
+/**
+ * *内部流程*
+ *
+ * 渲染标题或段落。普通正文段落使用 tab stop + tab run 实现段首缩进；
+ * 列表项内部段落不会添加段首 tab。
+ *
+ * @param block 标题或段落 IR
+ * @param context 渲染上下文
+ * @param options 段落渲染选项
+ * @returns docx 段落
+ */
 function renderTextBlock(
   block: Exclude<Block, List>,
   context: RenderContext,
@@ -119,6 +171,17 @@ function renderTextBlock(
   });
 }
 
+/**
+ * *内部流程*
+ *
+ * 渲染行内 IR。普通文本进入 renderTextRun，脚注引用进入 renderReference。
+ *
+ * @param nodes 行内 IR 列表
+ * @param style 当前文本样式
+ * @param context 渲染上下文
+ * @param footnoteContent 是否正在渲染脚注正文
+ * @returns docx 段落子节点列表
+ */
 function renderInline(
   nodes: InlineNodes,
   style: TextRunStyle,
@@ -131,6 +194,17 @@ function renderInline(
   });
 }
 
+/**
+ * *内部流程*
+ *
+ * 渲染单个文本 run。脚注正文 run 不显式设置字体和字号，让 Word 的 FootnoteText
+ * 样式接管。
+ *
+ * @param text 文本 IR
+ * @param style 当前文本样式
+ * @param footnoteContent 是否正在渲染脚注正文
+ * @returns docx TextRun
+ */
 function renderTextRun(text: Text, style: TextRunStyle, footnoteContent: boolean): TextRun {
   return new TextRun({
     text: text.content,
@@ -140,6 +214,16 @@ function renderTextRun(text: Text, style: TextRunStyle, footnoteContent: boolean
   });
 }
 
+/**
+ * *内部流程*
+ *
+ * 渲染正文中的脚注引用，并检查引用对应的脚注定义是否存在。
+ *
+ * @param id 内部脚注 id
+ * @param style 当前文本样式
+ * @param context 渲染上下文
+ * @returns docx TextRun
+ */
 function renderReference(id: number, style: TextRunStyle, context: RenderContext): TextRun {
   const footnoteId = id + 1;
   if (!context.footnotes[String(footnoteId)]) {
@@ -153,6 +237,15 @@ function renderReference(id: number, style: TextRunStyle, context: RenderContext
   });
 }
 
+/**
+ * *内部流程*
+ *
+ * 根据引用池中的脚注定义生成 docx 库需要的 footnotes 配置。
+ *
+ * @param document 内部文档 IR
+ * @param style DOCX 样式对象
+ * @returns docx footnotes 配置
+ */
 function buildFootnotes(document: Document, style: DocxStyle): Record<string, { children: Paragraph[] }> {
   const footnotes: Record<string, { children: Paragraph[] }> = {};
   document.referencePool.definitions.forEach((definition, id) => {
@@ -177,6 +270,16 @@ function buildFootnotes(document: Document, style: DocxStyle): Record<string, { 
   return footnotes;
 }
 
+/**
+ * *内部流程*
+ *
+ * 将项目列表样式转换为 docx numbering levels。无序列表会强制使用 bullet format，
+ * 但保留对应层级的缩进、字体和字号。
+ *
+ * @param style DOCX 样式对象
+ * @param kind 列表类型
+ * @returns docx numbering level 配置
+ */
 function buildLevels(style: DocxStyle, kind: "Ordered" | "Unordered"): ILevelsOptions[] {
   return style.list.levels.map((level, index) => {
     const effective = kind === "Unordered" ? unorderedLevel(level) : level;
@@ -218,6 +321,16 @@ function mapLevelFormat(format: NumberingFormat): (typeof LevelFormat)[keyof typ
   return map[format];
 }
 
+/**
+ * *内部工具*
+ *
+ * 根据文本语言选择 Word run 的字体属性。英文 run 只写 ascii/hAnsi/cs；
+ * 中文 run 额外写 eastAsia 和 eastAsia hint。
+ *
+ * @param text 文本 IR
+ * @param style 当前文本样式
+ * @returns docx 字体属性
+ */
 function fontForText(text: Text, style: TextRunStyle) {
   if (text.language === "English") {
     return { ascii: style.englishFont, hAnsi: style.englishFont, cs: style.englishFont };

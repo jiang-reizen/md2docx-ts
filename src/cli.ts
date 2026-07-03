@@ -52,6 +52,14 @@ Defaults:
   output: output/complex.docx
   style:  sample/style.conf if it exists, otherwise built-in defaults`;
 
+/**
+ * *公共接口*
+ *
+ * 解析 CLI 参数。返回值通过 command 字段区分转换命令、样式文件命令和 help。
+ *
+ * @param args CLI 参数，不包含 node 和脚本路径
+ * @returns 解析后的 CLI 选项
+ */
 export function parseCliArgs(args: string[]): CliOptions {
   if (args[0] === "style:create") {
     if (args.length !== 2) throw new Error("md2docx cli: style:create requires <path>");
@@ -101,6 +109,14 @@ export function parseCliArgs(args: string[]): CliOptions {
   };
 }
 
+/**
+ * *公共接口*
+ *
+ * 执行 CLI 命令。转换命令会读取 Markdown 和样式文件并写出 DOCX；
+ * 样式命令会创建或修改样式配置文件。
+ *
+ * @param args CLI 参数，默认使用 process.argv.slice(2)
+ */
 export async function runCli(args = process.argv.slice(2)): Promise<void> {
   const options = parseCliArgs(args);
   if (options.command === "help") {
@@ -124,6 +140,14 @@ export async function runCli(args = process.argv.slice(2)): Promise<void> {
   console.log(`created ${options.output}`);
 }
 
+/**
+ * *内部工具*
+ *
+ * 根据可选路径加载样式文件；未提供路径时返回内置默认样式。
+ *
+ * @param path 样式文件路径
+ * @returns DOCX 样式对象
+ */
 function loadStyle(path: string | undefined): DocxStyle {
   return path ? loadStyleFromFile(path) : createDefaultStyle();
 }

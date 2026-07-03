@@ -80,6 +80,13 @@ const listFields = new Set<string>([
   "hanging_indent",
 ]);
 
+/**
+ * *公共接口*
+ *
+ * 创建项目内置默认样式。返回对象包含 6 级标题、正文、脚注定义和 6 级列表样式。
+ *
+ * @returns 默认 DOCX 样式对象
+ */
 export function createDefaultStyle(): DocxStyle {
   return {
     headings: [
@@ -105,17 +112,44 @@ export function createDefaultStyle(): DocxStyle {
   };
 }
 
+/**
+ * *公共接口*
+ *
+ * 读取样式配置文件，并把配置覆盖到默认样式上。未出现的字段保留默认值。
+ *
+ * @param path 样式配置文件路径
+ * @returns 覆盖后的 DOCX 样式对象
+ */
 export function loadStyleFromFile(path: string): DocxStyle {
   const style = createDefaultStyle();
   applyStyleConfig(style, readFileSync(path, "utf8"));
   return style;
 }
 
+/**
+ * *公共接口*
+ *
+ * 创建新的样式配置文件。文件名不检查后缀，父目录不存在时会自动创建。
+ * 使用 `wx` 模式写入，因此目标文件已存在时会失败，避免覆盖用户配置。
+ *
+ * @param path 要创建的样式文件路径
+ * @param style 要写入的样式对象，默认使用内置默认样式
+ */
 export function createStyleFile(path: string, style = createDefaultStyle()): void {
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, serializeStyle(style), { encoding: "utf8", flag: "wx" });
 }
 
+/**
+ * *公共接口*
+ *
+ * 在已有样式文件中写入或修改一条配置。写入前会复用样式解析逻辑校验 key/value，
+ * 因此非法配置不会落盘。
+ *
+ * @param path 样式文件路径
+ * @param key 样式配置 key
+ * @param value 样式配置 value
+ */
 export function setStyleValue(path: string, key: string, value: string): void {
   validateStyleEntry(key, value);
   const input = readFileSync(path, "utf8");
@@ -123,6 +157,15 @@ export function setStyleValue(path: string, key: string, value: string): void {
   writeFileSync(path, output, "utf8");
 }
 
+/**
+ * *公共接口*
+ *
+ * 将配置文本应用到给定样式对象。配置格式为一行一个 `key = value`，空行和注释会被忽略。
+ *
+ * @param style 被修改的样式对象
+ * @param input 样式配置文本
+ * @returns 传入的同一个 style 对象
+ */
 export function applyStyleConfig(style: DocxStyle, input: string): DocxStyle {
   input.split(/\r?\n/).forEach((rawLine, index) => {
     const line = rawLine.trim();
@@ -138,6 +181,15 @@ export function applyStyleConfig(style: DocxStyle, input: string): DocxStyle {
   return style;
 }
 
+/**
+ * *公共接口*
+ *
+ * 将完整样式对象序列化为 style.conf 文本。通常由 createStyleFile 调用，也可用于
+ * 调用方自行保存样式内容。
+ *
+ * @param style 样式对象
+ * @returns 可写入文件的样式配置文本
+ */
 export function serializeStyle(style: DocxStyle): string {
   const lines = [
     "# md2docx-ts style config",
@@ -205,6 +257,14 @@ function applyConfigEntry(style: DocxStyle, key: string, value: string): void {
   throw new Error(`md2docx style: unknown key: ${key}`);
 }
 
+/**
+ * *内部校验*
+ *
+ * 用默认样式试应用单条配置，借用完整解析路径校验 key 和 value。
+ *
+ * @param key 样式配置 key
+ * @param value 样式配置 value
+ */
 function validateStyleEntry(key: string, value: string): void {
   applyStyleConfig(createDefaultStyle(), `${key} = ${value}`);
 }
@@ -335,6 +395,17 @@ function unquote(value: string): string {
     : value;
 }
 
+/**
+ * *内部工具*
+ *
+ * 在配置文本中更新指定 key；如果 key 不存在，则追加到文件末尾。
+ * 注释行不会被当作可更新配置。
+ *
+ * @param input 原配置文本
+ * @param key 要写入的配置 key
+ * @param value 要写入的配置 value
+ * @returns 更新后的配置文本
+ */
 function upsertConfigLine(input: string, key: string, value: string): string {
   const lines = input.split(/\r?\n/);
   const normalizedKey = key.trim();

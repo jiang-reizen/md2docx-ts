@@ -1,5 +1,14 @@
 import JSZip from "jszip";
 
+/**
+ * *内部流程*
+ *
+ * 打开 DOCX zip，对生成后的底层 XML 做兼容修补。目前会处理脚注 marker 和
+ * numbering id，再重新打包为 Buffer。
+ *
+ * @param buffer docx 库生成的 DOCX buffer
+ * @returns 修补后的 DOCX buffer；如果没有变化则返回原 buffer
+ */
 export async function patchDocxXml(buffer: Buffer): Promise<Buffer> {
   const zip = await JSZip.loadAsync(buffer);
   let changed = false;
@@ -30,6 +39,15 @@ export async function patchDocxXml(buffer: Buffer): Promise<Buffer> {
   return changed ? zip.generateAsync({ type: "nodebuffer" }) : buffer;
 }
 
+/**
+ * *内部工具*
+ *
+ * 修补 `word/footnotes.xml`。如果脚注区开头是普通上标数字 marker，
+ * 则替换为 Word 原生 `<w:footnoteRef/>` marker。
+ *
+ * @param xml footnotes.xml 文本
+ * @returns 修补后的 XML 文本
+ */
 export function patchFootnotesXmlText(xml: string): string {
   return xml.replace(/<w:footnote\b([^>]*)>([\s\S]*?)<\/w:footnote>/g, (whole, attrs: string, body: string) => {
     const id = Number(/w:id="(-?\d+)"/.exec(attrs)?.[1]);
@@ -49,6 +67,16 @@ export function patchFootnotesXmlText(xml: string): string {
   });
 }
 
+/**
+ * *内部工具*
+ *
+ * 稳定 `word/numbering.xml` 中的 abstract numbering id 和具体 numbering id，
+ * 并同步修改 `word/document.xml` 中段落引用的 numId。
+ *
+ * @param numberingXml numbering.xml 文本
+ * @param documentXml document.xml 文本
+ * @returns 修补后的两个 XML 文本
+ */
 function patchNumberingXml(numberingXml: string, documentXml: string): { numbering: string; document: string } {
   const abstractIds = [...numberingXml.matchAll(/<w:abstractNum\b[^>]*w:abstractNumId="(\d+)"/g)]
     .map((match) => Number(match[1]))
