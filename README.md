@@ -29,15 +29,6 @@ npm run md2docx
 npm run md2docx -- --input sample/paper.md --output output/paper.docx --style sample/style.conf # 指定输入、输出和样式文件
 ```
 
-## CLI 用法
-
-```bash
-md2docx [input.md] [output.docx]
-md2docx --input input.md --output output.docx --style style.conf
-md2docx style:create my-style # 创建一个样式配置文件 my-style.conf
-md2docx style:set my-style paragraph.tab_stop 720 # 设置样式
-```
-
 ## 支持语法及样式文件
 
 ### 支持的 Markdown 语法
@@ -50,7 +41,22 @@ md2docx style:set my-style paragraph.tab_stop 720 # 设置样式
 
 不支持链接、图片、表格、代码块、行内代码、HTML、引用块等结构；遇到这些语法会直接报错。
 
+## CLI 用法
+
+命令行用法详见 [docs/CLI.md](docs/CLI.md)。
+
+一些常用 CLI 命令：
+
+```bash
+md2docx [input.md] [output.docx]
+md2docx --input input.md --output output.docx --style style.conf
+md2docx style:create my-style # 创建一个样式配置文件 my-style.conf
+md2docx style:set my-style paragraph.tab_stop 720 # 设置样式
+```
+
 ### 样式文件
+
+样式文件详见 [docs/style.md](docs/style.md)。
 
 样式文件一行一个配置项，格式为：
 
@@ -73,11 +79,9 @@ list.level.0.format = decimal
 list.level.0.text = %1.
 ```
 
-可配置区域详见 [docs/style.md](docs/style.md)。
-
 ## API
 
-命令行用法见 [docs/CLI.md](docs/CLI.md)，库 API 见 [docs/API.md](docs/API.md)，样式文件详解见 [docs/style.md](docs/style.md)。
+库 API 详见 [docs/API.md](docs/API.md)。
 
 常用 API：
 
@@ -100,15 +104,6 @@ docs/             API 和样式文件说明
 sample/           示例 Markdown 和样式文件
 test/             单元测试
 ```
-
-## 限制与设计取舍
-
-TODO:
-
-- 为什么只支持窄 Markdown 子集？
-- 为什么未支持结构直接报错？
-- 字体名称和字体文件之间是什么关系？
-- 是否需要保留 OOXML patch？
 
 ## 许可证
 
