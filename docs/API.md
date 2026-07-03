@@ -1,81 +1,8 @@
-# md2docx-ts 对外 API
+# API
 
-本文档只说明可从 `src/index.ts` 导出的对外 API 及其调用方式。
+本文档说明 `md2docx-ts` 导出的核心库 API。
 
-## 安装与构建
-
-```bash
-npm install
-npm run build
-npm test
-```
-
-开发期可直接运行 TypeScript：
-
-```bash
-npm run md2docx
-```
-
-构建后产物位于 `dist/`，库入口为 `dist/index.js`，CLI 入口为 `dist/cli.js`。
-
-## CLI
-
-### Markdown 转 DOCX
-
-```bash
-npm run md2docx
-npm run md2docx -- input.md output.docx
-npm run md2docx -- --input input.md --output output.docx --style style.conf
-npm run md2docx -- -i input.md -o output.docx -s style.conf
-```
-
-默认值：
-
-| 参数 | 默认值 |
-| --- | --- |
-| `input` | `sample/complex.md` |
-| `output` | `output/complex.docx` |
-| `style` | 如果存在则使用 `sample/style.conf`，否则使用内置默认样式 |
-
-只传一个位置参数时：
-
-```bash
-npm run md2docx -- notes.md
-```
-
-输出路径自动变为：
-
-```text
-notes.docx
-```
-
-### 创建样式文件
-
-```bash
-npm run md2docx -- style:create my-style
-```
-
-说明：
-
-- 不检查文件后缀。
-- 父目录不存在时会自动创建。
-- 文件已存在时会失败，避免覆盖已有样式文件。
-- 文件内容为完整默认样式配置。
-
-### 修改样式文件
-
-```bash
-npm run md2docx -- style:set my-style paragraph.tab_stop 720
-npm run md2docx -- style:set my-style paragraph.english_font "Times New Roman"
-```
-
-说明：
-
-- 如果 key 已存在，则更新该行。
-- 如果 key 不存在，则追加到文件末尾。
-- 写入前会校验 key 和 value；非法配置不会写入文件。
-
-## 库 API
+## 导入
 
 ```ts
 import {
@@ -90,7 +17,7 @@ import {
 } from "md2docx-ts";
 ```
 
-### `parseMarkdown(input: string): Document`
+## `parseMarkdown(input: string): Document`
 
 把 Markdown 字符串解析为内部文档 IR。
 
@@ -98,27 +25,20 @@ import {
 const document = parseMarkdown("# 标题\n\n正文[^a]\n\n[^a]: 脚注");
 ```
 
-支持范围：
+支持标题、段落、列表、粗体、斜体和脚注。遇到不支持的结构会抛错，例如链接、图片、表格、代码块、行内代码、HTML、引用块。
 
-- 标题 `#` 到 `######`
-- 段落
-- 有序列表、无序列表、嵌套列表
-- 粗体、斜体、粗斜体
-- 脚注引用和脚注定义
-
-不支持的 Markdown 结构会直接抛错，例如 link、image、table、code fence、inline code、HTML、blockquote。
-
-### `createDefaultStyle(): DocxStyle`
+## `createDefaultStyle(): DocxStyle`
 
 创建一份完整默认样式对象。
 
 ```ts
 const style = createDefaultStyle();
+style.paragraph.tabStop = 720;
 ```
 
-返回值是新对象，可以在调用方修改。
+返回值是新对象，可以按需修改。
 
-### `loadStyleFromFile(path: string): DocxStyle`
+## `loadStyleFromFile(path: string): DocxStyle`
 
 读取样式文件，并覆盖默认样式。
 
@@ -126,17 +46,9 @@ const style = createDefaultStyle();
 const style = loadStyleFromFile("sample/style.conf");
 ```
 
-样式文件格式：
+未出现在样式文件里的字段会保留默认值。
 
-```text
-paragraph.tab_stop = 720
-heading.h1.alignment = center
-list.level.2.format = chinese
-```
-
-未出现的字段会保留默认值。
-
-### `createStyleFile(path: string, style?: DocxStyle): void`
+## `createStyleFile(path: string, style?: DocxStyle): void`
 
 创建新的样式文件。
 
@@ -151,10 +63,10 @@ createStyleFile("custom-style", style);
 说明：
 
 - 不检查文件后缀。
-- 自动创建父目录。
-- 目标文件已存在时抛错。
+- 会自动创建父目录。
+- 目标文件已存在时会抛错，避免覆盖。
 
-### `setStyleValue(path: string, key: string, value: string): void`
+## `setStyleValue(path: string, key: string, value: string): void`
 
 写入或修改样式文件中的一条配置。
 
@@ -167,11 +79,11 @@ setStyleValue("my-style", "paragraph.english_font", "Times New Roman");
 
 - 已存在的 key 会被更新。
 - 不存在的 key 会追加到文件末尾。
-- 写入前会校验 key/value。
+- 写入前会校验 key 和 value。
 
-### `serializeStyle(style: DocxStyle): string`
+## `serializeStyle(style: DocxStyle): string`
 
-把样式对象序列化为配置文件文本。
+把样式对象序列化为样式文件文本。
 
 ```ts
 const text = serializeStyle(createDefaultStyle());
@@ -179,7 +91,7 @@ const text = serializeStyle(createDefaultStyle());
 
 适合需要自行保存到数据库、网络响应或非本地文件系统的场景。
 
-### `buildDocx(document: Document, style: DocxStyle): Promise<Buffer>`
+## `buildDocx(document: Document, style: DocxStyle): Promise<Buffer>`
 
 把内部文档 IR 和样式对象渲染为 DOCX buffer。
 
@@ -189,9 +101,9 @@ const style = createDefaultStyle();
 const buffer = await buildDocx(document, style);
 ```
 
-### `writeDocx(document: Document, style: DocxStyle, outputPath: string): Promise<void>`
+## `writeDocx(document: Document, style: DocxStyle, outputPath: string): Promise<void>`
 
-生成 DOCX 并写入文件。
+生成 DOCX 并写入文件。输出目录不存在时会自动创建。
 
 ```ts
 const document = parseMarkdown(markdownText);
@@ -200,9 +112,7 @@ const style = loadStyleFromFile("sample/style.conf");
 await writeDocx(document, style, "output/paper.docx");
 ```
 
-输出目录不存在时会自动创建。
-
-## 常用完整示例
+## 完整示例
 
 ```ts
 import { readFileSync } from "node:fs";
