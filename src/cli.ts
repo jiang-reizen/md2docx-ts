@@ -4,18 +4,38 @@ import { extname } from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseMarkdown } from "./parser.js";
 import { writeDocx } from "./renderer.js";
-import { createDefaultStyle, loadStyleFromFile, type DocxStyle } from "./style.js";
+import { createDefaultStyle, createStyleFile, loadStyleFromFile, setStyleValue, type DocxStyle } from "./style.js";
 
-export interface CliOptions {
+export type CliOptions = ConvertOptions | StyleCreateOptions | StyleSetOptions | HelpOptions;
+
+export interface ConvertOptions {
+  command: "convert";
   input: string;
   output: string;
   style?: string;
-  help: boolean;
+}
+
+export interface StyleCreateOptions {
+  command: "style:create";
+  path: string;
+}
+
+export interface StyleSetOptions {
+  command: "style:set";
+  path: string;
+  key: string;
+  value: string;
+}
+
+export interface HelpOptions {
+  command: "help";
 }
 
 const helpText = `Usage:
   md2docx [input.md] [output.docx]
   md2docx --input input.md --output output.docx --style style.conf
+  md2docx style:create <path>
+  md2docx style:set <path> <key> <value>
 
 Options:
   -i, --input <path>    Markdown input path
@@ -23,19 +43,32 @@ Options:
   -s, --style <path>    Optional style config path
   -h, --help            Show this help
 
+Style commands:
+  style:create <path>             Create a new style config file
+  style:set <path> <key> <value>  Add or update one style config entry
+
 Defaults:
   input:  sample/complex.md
   output: output/complex.docx
   style:  sample/style.conf if it exists, otherwise built-in defaults`;
 
 export function parseCliArgs(args: string[]): CliOptions {
+  if (args[0] === "style:create") {
+    if (args.length !== 2) throw new Error("md2docx cli: style:create requires <path>");
+    return { command: "style:create", path: args[1]! };
+  }
+  if (args[0] === "style:set") {
+    if (args.length < 4) throw new Error("md2docx cli: style:set requires <path> <key> <value>");
+    return { command: "style:set", path: args[1]!, key: args[2]!, value: args.slice(3).join(" ") };
+  }
+
   const values: Partial<Record<"input" | "output" | "style", string>> = {};
   const seen = new Set<"input" | "output" | "style">();
   const positional: string[] = [];
 
   for (let index = 0; index < args.length; index++) {
     const arg = args[index]!;
-    if (arg === "-h" || arg === "--help") return { input: "", output: "", help: true };
+    if (arg === "-h" || arg === "--help") return { command: "help" };
 
     const longEquals = /^--(input|output|style)=(.+)$/.exec(arg);
     if (longEquals) {
@@ -61,17 +94,27 @@ export function parseCliArgs(args: string[]): CliOptions {
 
   const input = values.input ?? "sample/complex.md";
   return {
+    command: "convert",
     input,
     output: values.output ?? (values.input && !positional[1] ? replaceExtension(input, ".docx") : "output/complex.docx"),
     style: values.style ?? (existsSync("sample/style.conf") ? "sample/style.conf" : undefined),
-    help: false,
   };
 }
 
 export async function runCli(args = process.argv.slice(2)): Promise<void> {
   const options = parseCliArgs(args);
-  if (options.help) {
+  if (options.command === "help") {
     console.log(helpText);
+    return;
+  }
+  if (options.command === "style:create") {
+    createStyleFile(options.path);
+    console.log(`created ${options.path}`);
+    return;
+  }
+  if (options.command === "style:set") {
+    setStyleValue(options.path, options.key, options.value);
+    console.log(`updated ${options.path}`);
     return;
   }
 

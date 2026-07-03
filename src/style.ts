@@ -1,4 +1,5 @@
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 
 export type ParagraphAlignment = "left" | "center";
 
@@ -110,6 +111,18 @@ export function loadStyleFromFile(path: string): DocxStyle {
   return style;
 }
 
+export function createStyleFile(path: string, style = createDefaultStyle()): void {
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, serializeStyle(style), { encoding: "utf8", flag: "wx" });
+}
+
+export function setStyleValue(path: string, key: string, value: string): void {
+  validateStyleEntry(key, value);
+  const input = readFileSync(path, "utf8");
+  const output = upsertConfigLine(input, key, value);
+  writeFileSync(path, output, "utf8");
+}
+
 export function applyStyleConfig(style: DocxStyle, input: string): DocxStyle {
   input.split(/\r?\n/).forEach((rawLine, index) => {
     const line = rawLine.trim();
@@ -123,6 +136,27 @@ export function applyStyleConfig(style: DocxStyle, input: string): DocxStyle {
     applyConfigEntry(style, key, value);
   });
   return style;
+}
+
+export function serializeStyle(style: DocxStyle): string {
+  const lines = [
+    "# md2docx-ts style config",
+    "",
+    ...serializeTextStyle("paragraph", style.paragraph),
+    "",
+    ...serializeTextStyle("reference_definition", style.referenceDefinition),
+    "",
+    ...style.headings.flatMap((heading, index) => [
+      ...(index === 0 ? [] : [""]),
+      ...serializeTextStyle(`heading.h${index + 1}`, heading),
+    ]),
+    "",
+    ...style.list.levels.flatMap((level, index) => [
+      ...(index === 0 ? [] : [""]),
+      ...serializeListLevel(`list.level.${index}`, level),
+    ]),
+  ];
+  return `${lines.join("\n")}\n`;
 }
 
 function textStyle(
@@ -169,6 +203,10 @@ function applyConfigEntry(style: DocxStyle, key: string, value: string): void {
     return;
   }
   throw new Error(`md2docx style: unknown key: ${key}`);
+}
+
+function validateStyleEntry(key: string, value: string): void {
+  applyStyleConfig(createDefaultStyle(), `${key} = ${value}`);
 }
 
 function applyTextField(style: TextRunStyle, field: string, value: string): void {
@@ -295,6 +333,50 @@ function unquote(value: string): string {
   return value.length >= 2 && value.startsWith('"') && value.endsWith('"')
     ? value.slice(1, -1)
     : value;
+}
+
+function upsertConfigLine(input: string, key: string, value: string): string {
+  const lines = input.split(/\r?\n/);
+  const normalizedKey = key.trim();
+  let replaced = false;
+
+  const output = lines.map((line) => {
+    const eq = line.indexOf("=");
+    if (eq < 0 || line.trim().startsWith("#")) return line;
+    if (line.slice(0, eq).trim() !== normalizedKey) return line;
+    replaced = true;
+    return `${normalizedKey} = ${value}`;
+  });
+
+  if (!replaced) {
+    if (output.length > 0 && output[output.length - 1] !== "") output.push("");
+    output.push(`${normalizedKey} = ${value}`);
+  }
+  return `${output.join("\n").replace(/\n+$/, "")}\n`;
+}
+
+function serializeTextStyle(prefix: string, style: TextRunStyle): string[] {
+  return [
+    `${prefix}.chinese_font = ${style.chineseFont}`,
+    `${prefix}.english_font = ${style.englishFont}`,
+    `${prefix}.size = ${style.size}`,
+    `${prefix}.tab_stop = ${style.tabStop}`,
+    `${prefix}.line_spacing = ${style.lineSpacing}`,
+    `${prefix}.alignment = ${style.alignment}`,
+    `${prefix}.bold = ${style.bold}`,
+    `${prefix}.italic = ${style.italic}`,
+  ];
+}
+
+function serializeListLevel(prefix: string, style: ListLevelStyle): string[] {
+  return [
+    `${prefix}.format = ${style.format}`,
+    `${prefix}.font = ${style.font}`,
+    `${prefix}.size = ${style.size}`,
+    `${prefix}.text = ${style.text}`,
+    `${prefix}.left_indent = ${style.leftIndent}`,
+    `${prefix}.hanging_indent = ${style.hangingIndent}`,
+  ];
 }
 
 function defaultNumberingFont(format: NumberingFormat): string {

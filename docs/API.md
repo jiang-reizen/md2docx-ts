@@ -19,6 +19,8 @@ npm run md2docx
 npm run md2docx -- input.md output.docx
 npm run md2docx -- --input input.md --output output.docx --style style.conf
 npm run md2docx -- -i input.md -o output.docx -s style.conf
+npm run md2docx -- style:create my-style
+npm run md2docx -- style:set my-style paragraph.tab_stop 720
 ```
 
 默认值：
@@ -31,13 +33,29 @@ npm run md2docx -- -i input.md -o output.docx -s style.conf
 
 只传一个位置参数时，例如 `notes.md`，输出路径自动变为 `notes.docx`。
 
+样式文件命令：
+
+| 命令 | 作用 |
+| --- | --- |
+| `style:create <path>` | 创建新的样式文件，路径不检查后缀；文件已存在时会失败，避免覆盖。 |
+| `style:set <path> <key> <value>` | 修改已有样式文件；如果 key 已存在则更新该行，否则追加到文件末尾。 |
+
+`style:set` 会复用样式解析校验，因此未知 key、非法 value 会直接报错。value 里有空格时可以用 shell 引号包住，例如：
+
+```bash
+npm run md2docx -- style:set my-style paragraph.english_font "Times New Roman"
+```
+
 ## 公共库 API
 
 ```ts
 import {
   parseMarkdown,
   createDefaultStyle,
+  createStyleFile,
   loadStyleFromFile,
+  serializeStyle,
+  setStyleValue,
   buildDocx,
   writeDocx,
 } from "md2docx-ts";
@@ -86,6 +104,50 @@ const style = loadStyleFromFile("sample/style.conf");
 - 空行和 `#` 开头的注释会被忽略。
 - 未配置字段保留默认值。
 - 未知 key、未知 field、非法值会抛错。
+
+### `createStyleFile(path: string, style = createDefaultStyle()): void`
+
+作用：创建新的样式配置文件。
+
+调用：
+
+```ts
+createStyleFile("my-style");
+```
+
+说明：
+- 不检查文件后缀，`my-style`、`paper.conf`、`style.txt` 都可以。
+- 会自动创建父目录。
+- 使用 `wx` 写入模式，目标文件已存在时会失败，避免意外覆盖。
+- 默认写入完整默认样式；也可以传入自定义 `DocxStyle`。
+
+### `setStyleValue(path: string, key: string, value: string): void`
+
+作用：在样式文件里写入或修改一条配置。
+
+调用：
+
+```ts
+setStyleValue("my-style", "paragraph.tab_stop", "720");
+setStyleValue("my-style", "paragraph.english_font", "Times New Roman");
+```
+
+说明：
+- 如果文件中已有完全相同的 key，会替换该行。
+- 如果 key 不存在，会在文件末尾追加。
+- 修改前会校验 key 和 value；非法配置不会写入文件。
+
+### `serializeStyle(style: DocxStyle): string`
+
+作用：把 `DocxStyle` 序列化为 `style.conf` 文本。
+
+调用：
+
+```ts
+const text = serializeStyle(createDefaultStyle());
+```
+
+说明：通常由 `createStyleFile` 内部使用；当你想把样式文本写到其他存储介质时可以直接调用。
 
 ### `buildDocx(document: Document, style: DocxStyle): Promise<Buffer>`
 
@@ -253,11 +315,29 @@ interface DocxStyle {
 ### CLI 类型
 
 ```ts
-interface CliOptions {
+type CliOptions = ConvertOptions | StyleCreateOptions | StyleSetOptions | HelpOptions;
+
+interface ConvertOptions {
+  command: "convert";
   input: string;
   output: string;
   style?: string;
-  help: boolean;
+}
+
+interface StyleCreateOptions {
+  command: "style:create";
+  path: string;
+}
+
+interface StyleSetOptions {
+  command: "style:set";
+  path: string;
+  key: string;
+  value: string;
+}
+
+interface HelpOptions {
+  command: "help";
 }
 ```
 
@@ -298,7 +378,10 @@ interface CliOptions {
 | --- | --- | --- |
 | `createDefaultStyle()` | 公共入口，创建默认样式。 | 库调用。 |
 | `loadStyleFromFile(path)` | 公共入口，读取配置文件并覆盖默认样式。 | 库调用。 |
+| `createStyleFile(path, style?)` | 公共入口，创建新的样式配置文件。 | 库调用和 CLI `style:create` 调用。 |
+| `setStyleValue(path, key, value)` | 公共入口，更新或追加一条样式配置。 | 库调用和 CLI `style:set` 调用。 |
 | `applyStyleConfig(style, input)` | 把配置文本应用到已有样式对象。 | 测试和内部调用；需要自定义配置来源时可用。 |
+| `serializeStyle(style)` | 把样式对象转成完整配置文件文本。 | `createStyleFile` 内部调用；也可由库调用方复用。 |
 | `textStyle(...)` | 构造文本样式对象。 | style 内部调用。 |
 | `listLevel(format, level, leftIndent)` | 构造单层列表样式对象。 | style 内部调用。 |
 | `applyConfigEntry(style, key, value)` | 分派单条配置到正文、标题、脚注或列表。 | `applyStyleConfig` 内部调用。 |
@@ -315,6 +398,9 @@ interface CliOptions {
 | `parseInteger(value, field)` | 解析严格整数。 | style 内部调用。 |
 | `normalize(value)` | 统一大小写、空白、下划线和短横线。 | style 内部调用。 |
 | `unquote(value)` | 去掉成对双引号。 | style 内部调用。 |
+| `upsertConfigLine(input, key, value)` | 更新已有配置行，或在末尾追加配置行。 | `setStyleValue` 内部调用。 |
+| `serializeTextStyle(prefix, style)` | 序列化正文、标题或脚注文本样式。 | `serializeStyle` 内部调用。 |
+| `serializeListLevel(prefix, style)` | 序列化单层列表样式。 | `serializeStyle` 内部调用。 |
 | `defaultNumberingFont(format)` | 根据编号格式返回默认字体。 | style 内部调用。 |
 | `defaultNumberingText(format, level)` | 根据编号格式和层级返回默认编号文本。 | style 内部调用。 |
 
